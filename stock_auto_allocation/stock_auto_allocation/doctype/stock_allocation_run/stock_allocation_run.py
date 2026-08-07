@@ -24,6 +24,26 @@ store (via the Store Distance master table) is tried per shortfall -- no
 splitting across multiple source stores. Whatever that nearest store can't
 cover is left unfulfilled (surfaced via msgprint).
 
+In-transit stock handling (opt-in, per run -- see consider_transit_at_source
+/ consider_transit_at_target on Stock Allocation Run): stock already sitting
+in a warehouse's Transit Warehouse (requested but not yet confirmed into the
+regular warehouse) is EXCLUDED from every stock calculation by default,
+matching the pre-toggle behavior. Checking "Add In-Transit Stock to Source
+Warehouses" lets a source (DC or, in Tier 2, another store) send out stock
+that's still sitting in its own transit, before it's been confirmed
+received. Checking "Add In-Transit Stock to Target Warehouses" counts a
+destination store's in-transit stock as already covering part of its
+Required Quantity, preventing over-allocation on top of a pending request.
+Both default OFF/unchecked.
+
+Reset (`start_over`): clears the working list and any generated proposal so
+filter/criteria changes actually take effect on the next Get Items (which
+only appends and skips duplicates by design, so changing filters after the
+fact wouldn't otherwise remove stale rows). Blocked once Material Requests
+already exist for the run (status "Requested"), since clearing
+proposal_lines at that point would destroy the traceability link to real
+documents -- start a new Stock Allocation Run instead.
+
 Workflow (SRS 3.8, updated): Draft -> Items Pulled -> Proposal Generated ->
 Approved -> Requested. No real document is created until
 `create_material_requests` runs, and even then it raises a **Material
@@ -80,7 +100,7 @@ class StockAllocationRun(Document):
 				continue
 
 			total_sales = _sum_sales_qty(variants, window_start=window_start)
-			total_balance = _sum_store_balance(variants)
+			total_balance = _sum_store_balance(variants, include_transit=bool(self.consider_transit_at_target))
 			# Total Qty = Total Sales + Total Balance (units sold + units
 			# still on hand across stores = total units that have ever
 			# flowed through the store network for this item).
@@ -102,6 +122,30 @@ class StockAllocationRun(Document):
 			)
 
 		self.status = "Items Pulled"
+		self.save()
+
+	# ------------------------------------------------------------------
+	# Reset -- clears the working list and any generated proposal so
+	# filter/criteria changes actually take effect on the next Get Items
+	# (get_items only appends and skips duplicates, so changing filters
+	# after the fact wouldn't otherwise remove stale rows). Blocked once
+	# Material Requests already exist for this run, since clearing
+	# proposal_lines would destroy the traceability link to them -- start
+	# a new Stock Allocation Run instead at that point.
+	# ------------------------------------------------------------------
+	@frappe.whitelist()
+	def start_over(self):
+		if self.status == "Requested":
+			frappe.throw(
+				_(
+					"This run already has Material Requests created against it and can't be "
+					"reset, since that would lose the link to those requests. Create a new "
+					"Stock Allocation Run instead."
+				)
+			)
+		self.items = []
+		self.proposal_lines = []
+		self.status = "Draft"
 		self.save()
 
 	# ------------------------------------------------------------------
@@ -182,7 +226,7 @@ class StockAllocationRun(Document):
 		list of dicts describing any store whose Required Quantity wasn't
 		fully covered by the DC -- callers use this to attempt Tier 2.
 		"""
-		dc_stock = _get_bin_qty(variant, self.dc_warehouse)
+		dc_stock = _get_effective_stock(variant, self.dc_warehouse, bool(self.consider_transit_at_source))
 
 		# Rank stores by sales velocity within the lookback period (FR-12),
 		# and compute each store's Required Quantity (SRS 6.2).
@@ -190,7 +234,7 @@ class StockAllocationRun(Document):
 		for wh in store_warehouses:
 			period_qty = _sum_sales_qty([variant], warehouse=wh, from_date=lookback_start)
 			daily_velocity = flt(period_qty) / cint(self.lookback_period_days)
-			current_stock = _get_bin_qty(variant, wh)
+			current_stock = _get_effective_stock(variant, wh, bool(self.consider_transit_at_target))
 			required_qty = max(0.0, (daily_velocity * cint(self.coverage_days)) - current_stock)
 			if required_qty > 0:
 				ranked.append({"warehouse": wh, "velocity": daily_velocity, "required_qty": required_qty})
@@ -245,7 +289,7 @@ class StockAllocationRun(Document):
 				still_unfulfilled.append((destination, needed))
 				continue
 
-			source_stock = _get_bin_qty(variant, nearest)
+			source_stock = _get_effective_stock(variant, nearest, bool(self.consider_transit_at_source))
 
 			if mode == "Spreading":
 				# Source keeps enough to cover its OWN Coverage Days first.
@@ -399,19 +443,28 @@ def _sum_sales_qty(item_codes, warehouse=None, from_date=None, window_start=None
 	return flt(result[0][0]) if result and result[0][0] else 0.0
 
 
-def _sum_store_balance(item_codes):
+def _sum_store_balance(item_codes, include_transit=False):
+	"""Total Balance metric (SRS 3.2): stock on hand across all stores.
+	If include_transit is True, also adds stock already in each store's
+	Transit Warehouse (mirrors consider_transit_at_target when set on the
+	run this is called from).
+	"""
 	if not item_codes:
 		return 0.0
 	store_warehouses = _get_store_warehouses()
 	if not store_warehouses:
 		return 0.0
+	warehouses = list(store_warehouses)
+	if include_transit:
+		transit_warehouses = [t for s in store_warehouses if (t := _resolve_transit_warehouse(s))]
+		warehouses += transit_warehouses
 	result = frappe.db.sql(
 		"""
 		select sum(actual_qty)
 		from `tabBin`
 		where item_code in %(item_codes)s and warehouse in %(warehouses)s
 		""",
-		{"item_codes": item_codes, "warehouses": store_warehouses},
+		{"item_codes": item_codes, "warehouses": warehouses},
 	)
 	return flt(result[0][0]) if result and result[0][0] else 0.0
 
@@ -457,17 +510,10 @@ def _get_nearest_store(destination, store_warehouses):
 	return None
 
 
-def _get_transit_warehouse(store_warehouse):
-	"""Resolves the Transit Warehouse for a given store warehouse.
-
-	1. Prefers the explicit `custom_transit_warehouse` link set on the
-	   Warehouse record.
-	2. Falls back to looking for a warehouse literally named
-	   "T-<store_warehouse>" -- a straight "T-" prefix on the store's full
-	   warehouse name (which already includes the company abbreviation
-	   suffix, e.g. "Riyadh Hayat - MA" -> "T-Riyadh Hayat - MA").
-	Raises a clear error if neither resolves, rather than silently
-	allocating to the wrong warehouse.
+def _resolve_transit_warehouse(store_warehouse):
+	"""Same resolution logic as _get_transit_warehouse, but returns None
+	instead of throwing when nothing resolves -- used by metrics/required-
+	quantity calculations that should degrade gracefully rather than block.
 	"""
 	explicit = frappe.db.get_value("Warehouse", store_warehouse, "custom_transit_warehouse")
 	if explicit:
@@ -477,13 +523,47 @@ def _get_transit_warehouse(store_warehouse):
 	if frappe.db.exists("Warehouse", candidate):
 		return candidate
 
+	return None
+
+
+def _get_transit_warehouse(store_warehouse):
+	"""Resolves the Transit Warehouse for a given store warehouse, raising
+	a clear error if it can't be resolved -- used when actually creating a
+	Material Request, where silently skipping would allocate to nowhere.
+
+	1. Prefers the explicit `custom_transit_warehouse` link set on the
+	   Warehouse record.
+	2. Falls back to looking for a warehouse literally named
+	   "T-<store_warehouse>" -- a straight "T-" prefix on the store's full
+	   warehouse name (which already includes the company abbreviation
+	   suffix, e.g. "Riyadh Hayat - MA" -> "T-Riyadh Hayat - MA").
+	"""
+	resolved = _resolve_transit_warehouse(store_warehouse)
+	if resolved:
+		return resolved
+
 	frappe.throw(
 		_(
 			"Could not resolve a Transit Warehouse for store {0}. "
 			"Set the \"Transit Warehouse\" field on that Warehouse record, "
-			"or create a warehouse named \"{1}\"."
-		).format(store_warehouse, candidate)
+			"or create a warehouse named \"T-{0}\"."
+		).format(store_warehouse)
 	)
+
+
+def _get_effective_stock(item_code, warehouse, include_transit):
+	"""A warehouse's own Bin quantity, PLUS whatever is already sitting in
+	its Transit Warehouse (goods already on the way in), but ONLY when
+	include_transit is True. Callers pass the run's
+	consider_transit_at_source / consider_transit_at_target flag for this,
+	so the behavior is opt-in per direction, not automatic.
+	"""
+	total = _get_bin_qty(item_code, warehouse)
+	if include_transit:
+		transit = _resolve_transit_warehouse(warehouse)
+		if transit:
+			total += _get_bin_qty(item_code, transit)
+	return total
 
 
 @frappe.whitelist()

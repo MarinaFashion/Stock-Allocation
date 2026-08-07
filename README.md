@@ -21,18 +21,27 @@ narrower: it controls Tier 2's safety-stock behavior at the source store
 1. **Get Items** — filter Item Templates by Item Year / Season / Collection /
    Drop, pull matching templates into a working list. Season, Collection and
    Drop are mutually cascading dropdowns (narrowing one narrows the others'
-   options to only combinations that actually exist on your Items).
+   options to only combinations that actually exist on your Items). Use
+   **Start Over** (visible once the run has left Draft, until Material
+   Requests are created) to clear the working list and any generated
+   proposal if you change filters — `get_items` only appends and skips
+   duplicates, so it won't remove stale rows from a previous filter
+   selection on its own.
 2. **Metrics** — for each template, shows Total Qty, Total Sales, Total
    Balance and ST% (all stores, all-time — see Known Assumptions below).
-   `Total Qty = Total Sales + Total Balance`.
+   `Total Qty = Total Sales + Total Balance`. Total Balance includes stock
+   already sitting in each store's Transit Warehouse, not just what's been
+   formally received into the store — see Section 4 for why.
 3. **Generate Proposal** — for each variant of each included template:
    - **Tier 1 (DC → Store):** ranks store warehouses by sales velocity over
      your chosen Lookback Period, and proposes a transfer quantity per store
      using:
      ```
      Daily Sales Velocity = Sales Qty (Lookback Period) / Lookback Period (days)
-     Required Quantity    = MAX(0, Daily Sales Velocity * Coverage Days - Current Store Stock)
+     Required Quantity    = MAX(0, Daily Sales Velocity * Coverage Days - Effective Store Stock)
      ```
+     `Effective Store Stock` = the store's own on-hand stock **plus**
+     whatever's already sitting in its Transit Warehouse — see Section 4.
    - **Tier 2 (Store → Store fallback):** if the DC can't fully cover a
      store's Required Quantity, the app tries the **single nearest store**
      (via the Store Distance table) to cover the remaining shortfall — see
@@ -93,7 +102,34 @@ to the wrong warehouse.
 
 ---
 
-## 4. Tier 2 (store-to-store) and the Mode field
+## 4. In-transit stock, Tier 2, the Mode field, and Start Over
+
+### In-transit stock is opt-in, per direction
+
+Stock already sitting in a warehouse's Transit Warehouse (requested but not
+yet confirmed into the regular warehouse) is **excluded from every
+allocation calculation by default**. Two checkboxes on the Stock Allocation
+Run header let you opt in, independently, per run:
+
+| Field | What it does when checked | Why you'd leave it unchecked |
+|---|---|---|
+| **Add In-Transit Stock to Source Warehouses** | A source (the DC in Tier 1, or another store in Tier 2) can send out stock that's still sitting in its own Transit Warehouse, not yet confirmed received. | Sometimes a source genuinely can't forward stock it hasn't received/verified yet — leave unchecked to only ever send from confirmed stock. |
+| **Add In-Transit Stock to Target Warehouses** | A destination store's in-transit stock counts toward its Required Quantity, so it isn't allocated *more* on top of a pending request. | Leave unchecked if you'd rather ignore what's inbound and let the store's confirmed stock alone drive the calculation. |
+
+Both default **unchecked** — i.e. the original behavior (in-transit stock
+ignored everywhere) unless you turn one or both on. When checked:
+
+```
+Effective Stock (that side) = Warehouse's own Bin quantity + its Transit Warehouse's Bin quantity
+```
+
+This applies to: DC stock in Tier 1 (source toggle), a destination store's
+Required Quantity in Tier 1 (target toggle), a Tier 2 source store's
+sendable amount (source toggle, including how it interacts with its own
+Spreading safety-stock check), and the Total Balance metric shown in the
+working list (target toggle).
+
+### Tier 2 (store-to-store) and the Mode field
 
 Tier 2 only runs for a store/item once Tier 1 has left a shortfall (DC stock
 insufficient). When that happens:
@@ -125,6 +161,17 @@ SRS — those remain a future version. In v1.1.0, Tier 1 and Tier 2 both
 allocate to *whichever* stores actually have a Required Quantity shortfall,
 regardless of Mode; Mode only changes how much a Tier 2 source store is
 willing to give up.
+
+### Start Over
+
+`get_items()` only appends new matching templates and skips ones already in
+the working list — it never removes stale rows if you change a filter after
+the fact. The **Start Over** button (next to Get Items, once there's
+something to clear) resets the working list and any generated proposal back
+to a blank slate, so filter/criteria changes actually take effect on the
+next Get Items click. It's disabled once the run has already reached
+"Requested" status (real Material Requests exist) — start a new Stock
+Allocation Run instead at that point, to keep the audit trail intact.
 
 ---
 
@@ -228,6 +275,14 @@ git push origin v1.0.0
 These were flagged during the SRS review as genuinely open, or were
 simplified pragmatically to ship an MVP. Revisit before relying on this in
 production:
+
+- **Transit stock not counted for the source's own need**: in Tier 2
+  Spreading mode, a source store's own Coverage Days target is compared
+  only against its own physical stock, not stock it has inbound in its own
+  Transit Warehouse. In principle a store with a lot already inbound needs
+  less new safety stock reserved — this isn't accounted for yet, so Tier 2
+  can be slightly more conservative (send less) than strictly necessary in
+  that specific case.
 
 - **ST% all-time window**: true all-time by default. If performance at your
   data volume requires it, add `"stock_alloc_use_current_year_window": 1` to

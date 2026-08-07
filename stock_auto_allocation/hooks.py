@@ -4,7 +4,7 @@ app_publisher = "Your Company"
 app_description = "Stock Auto-Allocation Module: DC-to-store and store-to-store allocation based on sales velocity and coverage days."
 app_email = "dev@yourcompany.com"
 app_license = "mit"
-app_version = "1.1.0"
+app_version = "1.1.2"
 
 # Requires ERPNext (Stock module: Item, Warehouse, Bin, Stock Entry, Sales Invoice)
 required_apps = ["erpnext"]

@@ -87,6 +87,18 @@ function add_workflow_buttons(frm) {
 		}).addClass("btn-primary");
 	}
 
+	// Available any time there's a working list or proposal to clear, up
+	// until Material Requests actually exist (status "Requested") -- past
+	// that point the run is historical and shouldn't be reset.
+	if (frm.doc.status !== "Draft" && frm.doc.status !== "Requested") {
+		frm.add_custom_button(__("Start Over"), () => {
+			frappe.confirm(
+				__("This clears the working list and any generated proposal on this run, so filter changes take effect cleanly. It does not affect any documents already created. Continue?"),
+				() => save_then_call(frm, "start_over")
+			);
+		});
+	}
+
 	if (frm.doc.status === "Items Pulled" && (frm.doc.items || []).length) {
 		frm.add_custom_button(__("Generate Proposal"), () => {
 			save_then_call(frm, "generate_proposal");

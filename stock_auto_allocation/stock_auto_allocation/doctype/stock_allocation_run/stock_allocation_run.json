@@ -19,6 +19,10 @@
   "column_break_filters",
   "collection",
   "drop",
+  "section_break_transit",
+  "consider_transit_at_source",
+  "column_break_transit",
+  "consider_transit_at_target",
   "section_break_items",
   "items",
   "get_items_html",
@@ -102,6 +106,29 @@
    "fieldname": "drop",
    "fieldtype": "Select",
    "label": "Drop"
+  },
+  {
+   "fieldname": "section_break_transit",
+   "fieldtype": "Section Break",
+   "label": "In-Transit Stock Handling"
+  },
+  {
+   "default": "0",
+   "description": "If checked, stock already sitting in a source warehouse's own Transit Warehouse (goods it hasn't yet received/confirmed) counts as available to send. If unchecked (default), only stock already confirmed in the source's regular warehouse can be sent.",
+   "fieldname": "consider_transit_at_source",
+   "fieldtype": "Check",
+   "label": "Add In-Transit Stock to Source Warehouses"
+  },
+  {
+   "fieldname": "column_break_transit",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "0",
+   "description": "If checked, stock already sitting in a destination store's Transit Warehouse (already requested, on its way) counts toward that store's current stock when calculating Required Quantity -- preventing over-allocation. If unchecked (default), in-transit stock is ignored and only the store's own confirmed stock counts.",
+   "fieldname": "consider_transit_at_target",
+   "fieldtype": "Check",
+   "label": "Add In-Transit Stock to Target Warehouses"
   },
   {
    "fieldname": "section_break_items",
