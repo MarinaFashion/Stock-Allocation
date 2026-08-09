@@ -173,16 +173,215 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
             target_stores = [self.selected_target_store]
             use_dc = False
 
-        return self._plan_scoped_network(
+        if scope == "Many-to-Many":
+            return self._plan_scoped_network(
+                template=template,
+                variants=variants,
+                all_stores=stores,
+                source_stores=source_stores,
+                target_stores=target_stores,
+                minimum_per_variant=minimum_per_variant,
+                lookback_start=lookback_start,
+                use_dc=use_dc,
+            )
+
+        return self._plan_restricted_scope(
             template=template,
             variants=variants,
-            all_stores=stores,
             source_stores=source_stores,
             target_stores=target_stores,
             minimum_per_variant=minimum_per_variant,
             lookback_start=lookback_start,
             use_dc=use_dc,
         )
+
+    def _plan_restricted_scope(
+        self,
+        template,
+        variants,
+        source_stores,
+        target_stores,
+        minimum_per_variant,
+        lookback_start,
+        use_dc,
+    ):
+        """Plan One-to-Many, Many-to-One and One-to-One transfers.
+
+        Restricted scopes are demand-based rather than redistribution-based:
+        every donor retains its own coverage/minimum reserve and every target
+        receives only its calculated shortage.
+        """
+        days = max(1, cint(self.lookback_period_days))
+        coverage_days = max(0, cint(self.coverage_days))
+
+        stock = {}
+        sales = {}
+        required = {}
+        surplus = {}
+        deficits = {}
+
+        relevant_stores = list(dict.fromkeys(source_stores + target_stores))
+
+        for store in relevant_stores:
+            for variant in variants:
+                is_source = store in source_stores
+                consider_transit = (
+                    bool(self.consider_transit_at_source)
+                    if is_source
+                    else bool(self.consider_transit_at_target)
+                )
+                qty = self._effective_qty(
+                    variant,
+                    store,
+                    consider_transit,
+                )
+                sold = max(
+                    0,
+                    flt(
+                        _sum_sales_qty(
+                            [variant],
+                            warehouse=store,
+                            from_date=lookback_start,
+                        )
+                    ),
+                )
+                velocity = sold / days
+                wanted = max(
+                    minimum_per_variant,
+                    int(round(velocity * coverage_days)),
+                )
+
+                stock[(store, variant)] = qty
+                sales[(store, variant)] = sold
+                required[(store, variant)] = wanted
+
+        eligible_targets = [
+            store
+            for store in target_stores
+            if sum(sales[(store, variant)] for variant in variants) > 0
+        ]
+        if not eligible_targets:
+            return [], _(
+                "no selected target store has sales in the lookback period"
+            )
+
+        for source in source_stores:
+            for variant in variants:
+                surplus[(source, variant)] = max(
+                    0,
+                    stock[(source, variant)]
+                    - required[(source, variant)],
+                )
+
+        for target in eligible_targets:
+            for variant in variants:
+                deficits[(target, variant)] = max(
+                    0,
+                    required[(target, variant)]
+                    - stock[(target, variant)],
+                )
+
+        dc_available = {
+            variant: (
+                self._effective_qty(
+                    variant,
+                    self.dc_warehouse,
+                    bool(self.consider_transit_at_source),
+                )
+                if use_dc
+                else 0
+            )
+            for variant in variants
+        }
+
+        target_order = sorted(
+            eligible_targets,
+            key=lambda store: (
+                -sum(sales[(store, variant)] for variant in variants),
+                store,
+            ),
+        )
+
+        unfulfilled = []
+
+        for target in target_order:
+            for variant in variants:
+                remaining = deficits[(target, variant)]
+                if remaining <= 0:
+                    continue
+
+                if use_dc:
+                    qty = min(remaining, dc_available[variant])
+                    if qty > 0:
+                        self._append_proposal(
+                            template=template,
+                            variant=variant,
+                            source=self.dc_warehouse,
+                            destination=target,
+                            qty=qty,
+                            tier="DC",
+                            source_stock=self._effective_qty(
+                                variant,
+                                self.dc_warehouse,
+                                bool(self.consider_transit_at_source),
+                            ),
+                            source_sales=0,
+                            target_stock=stock[(target, variant)],
+                            target_sales=sales[(target, variant)],
+                        )
+                        dc_available[variant] -= qty
+                        remaining -= qty
+
+                donors = [
+                    source
+                    for source in source_stores
+                    if source != target
+                    and surplus[(source, variant)] > 0
+                ]
+                donors.sort(
+                    key=lambda source: (
+                        _distance_between(source, target),
+                        -surplus[(source, variant)],
+                        source,
+                    )
+                )
+
+                for source in donors:
+                    if remaining <= 0:
+                        break
+
+                    qty = min(
+                        remaining,
+                        surplus[(source, variant)],
+                    )
+                    if qty <= 0:
+                        continue
+
+                    self._append_proposal(
+                        template=template,
+                        variant=variant,
+                        source=source,
+                        destination=target,
+                        qty=qty,
+                        tier="Store",
+                        source_stock=stock[(source, variant)],
+                        source_sales=sales[(source, variant)],
+                        target_stock=stock[(target, variant)],
+                        target_sales=sales[(target, variant)],
+                    )
+                    surplus[(source, variant)] -= qty
+                    remaining -= qty
+
+                if remaining > 0:
+                    unfulfilled.append((variant, target, remaining))
+
+        if not any(
+            flt(row.qty) > 0 and row.item_template == template
+            for row in self.proposal_lines
+        ) and not unfulfilled:
+            return [], _("no transfer is required for the selected scope")
+
+        return unfulfilled, None
 
     def _plan_scoped_network(
         self,
