@@ -76,14 +76,12 @@
    "fieldtype": "Section Break"
   },
   {
-   "default": "1",
-   "description": "Minimum quantity of every variant that must remain in each selected destination store. The system automatically calculates how many complete stores the available variants can support.",
+   "description": "Optional item-specific override. Leave blank to use the Default Minimum Pieces per Variant from the main Stock Allocation Run.",
    "fieldname": "minimum_per_variant",
    "fieldtype": "Int",
    "in_list_view": 1,
-   "label": "Minimum Pieces per Variant",
-   "non_negative": 1,
-   "reqd": 1
+   "label": "Minimum Pieces per Variant Override",
+   "non_negative": 1
   },
   {
    "default": "0",

@@ -15,6 +15,12 @@
   "qty",
   "tier",
   "status",
+  "section_break_audit",
+  "source_stock",
+  "source_sales",
+  "column_break_audit",
+  "target_stock",
+  "target_sales",
   "section_break_2",
   "transit_warehouse",
   "material_request",
@@ -50,7 +56,6 @@
    "reqd": 1
   },
   {
-   "description": "The store this stock is ultimately intended for. The actual Material Request is raised against that store's Transit Warehouse -- see the Transit Warehouse field below.",
    "fieldname": "target_warehouse",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -90,12 +95,52 @@
    "read_only": 1
   },
   {
+   "fieldname": "section_break_audit",
+   "fieldtype": "Section Break",
+   "label": "Stock and Sales at Proposal Time"
+  },
+  {
+   "fieldname": "source_stock",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Source Stock",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "source_sales",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Source Sales",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_audit",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "target_stock",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Target Stock",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "target_sales",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Target Sales",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
    "fieldname": "section_break_2",
    "fieldtype": "Section Break",
    "label": "Transit / Fulfillment"
   },
   {
-   "description": "Resolved automatically on execution: the Target Warehouse's designated Transit Warehouse.",
    "fieldname": "transit_warehouse",
    "fieldtype": "Link",
    "in_list_view": 1,
@@ -112,10 +157,9 @@
    "read_only": 1
   },
   {
-   "description": "Reserved for a future version: the Transit -> Store leg, once the store manager confirms and moves the goods.",
    "fieldname": "stock_entry",
    "fieldtype": "Link",
-   "label": "Stock Entry (Transit \u2192 Store, future)",
+   "label": "Stock Entry (Transit → Store, future)",
    "options": "Stock Entry",
    "read_only": 1
   }
@@ -123,7 +167,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-05 00:00:00.000000",
+ "modified": "2026-08-09 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Stock Auto Allocation",
  "name": "Stock Allocation Proposal Line",
