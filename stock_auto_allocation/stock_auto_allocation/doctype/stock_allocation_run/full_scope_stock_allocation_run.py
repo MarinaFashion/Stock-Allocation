@@ -13,7 +13,7 @@ import frappe
 from frappe import _
 from frappe.utils import add_days, cint, flt, nowdate
 
-from stock_auto_allocation.allocation_engine import (
+from stock_auto_allocation.stock_auto_allocation.allocation_engine import (
     StoreMetric,
     build_target_matrix,
     choose_selected_stores,
