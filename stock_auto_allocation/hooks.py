@@ -4,7 +4,7 @@ app_publisher = "Your Company"
 app_description = "Stock Auto-Allocation Module: DC-to-store and store-to-store allocation based on sales velocity and coverage days."
 app_email = "dev@yourcompany.com"
 app_license = "mit"
-app_version = "1.1.2"
+app_version = "1.2.0"
 
 # Requires ERPNext (Stock module: Item, Warehouse, Bin, Stock Entry, Sales Invoice)
 required_apps = ["erpnext"]
@@ -28,3 +28,10 @@ after_install = "stock_auto_allocation.install.after_install"
 # Custom Fields and the Stock Allocation Manager Role are created idempotently
 # via after_install (see install.py) rather than static fixtures, so the app
 # can be installed cleanly on any ERPNext v15 site without an export step.
+override_doctype_class = {
+    "Stock Allocation Run": (
+        "stock_auto_allocation.stock_auto_allocation.doctype."
+        "stock_allocation_run.full_scope_stock_allocation_run."
+        "FullScopeStockAllocationRun"
+    )
+}
