@@ -14,8 +14,7 @@
   "total_balance",
   "st_percent",
   "section_break_1",
-  "mode",
-  "group_store_count",
+  "minimum_per_variant",
   "excluded"
  ],
  "fields": [
@@ -40,7 +39,7 @@
    "fieldtype": "Column Break"
   },
   {
-   "description": "All stores, all-time (Section 3.2 of the SRS).",
+   "description": "All stores, all-time.",
    "fieldname": "total_qty",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -65,7 +64,7 @@
    "read_only": 1
   },
   {
-   "description": "ST% = Total Sales \u00f7 (Total Sales + Total Balance)",
+   "description": "ST% = Total Sales ÷ (Total Sales + Total Balance)",
    "fieldname": "st_percent",
    "fieldtype": "Percent",
    "in_list_view": 1,
@@ -77,18 +76,14 @@
    "fieldtype": "Section Break"
   },
   {
-   "description": "Required if this item needs Tier 2 (store-to-store) fallback. Controls safety-stock behavior at the source store: Spreading preserves the source's own Coverage Days target; Grouping ignores safety stock entirely. Left blank, Tier 2 is skipped for this item (Tier 1 DC allocation still runs). Full Grouping/Spreading store-selection logic (top-N ranking, size round-robin) is not yet implemented.",
-   "fieldname": "mode",
-   "fieldtype": "Select",
-   "label": "Mode (Grouping / Spreading)",
-   "options": "\nGrouping\nSpreading"
-  },
-  {
-   "depends_on": "eval:doc.mode==\"Grouping\"",
-   "description": "Not yet used by the allocation engine -- reserved for the full Grouping algorithm in a future version.",
-   "fieldname": "group_store_count",
+   "default": "1",
+   "description": "Minimum quantity of every variant that must remain in each selected destination store. The system automatically calculates how many complete stores the available variants can support.",
+   "fieldname": "minimum_per_variant",
    "fieldtype": "Int",
-   "label": "Number of Stores to Group Into (future)"
+   "in_list_view": 1,
+   "label": "Minimum Pieces per Variant",
+   "non_negative": 1,
+   "reqd": 1
   },
   {
    "default": "0",
@@ -101,7 +96,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-04 00:00:00.000000",
+ "modified": "2026-08-09 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Stock Auto Allocation",
  "name": "Stock Allocation Run Item",

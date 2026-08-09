@@ -1,4 +1,4 @@
-"""Pure planning helpers for style-level stock reallocation."""
+"""Pure planning helpers for automatic complete-range allocation."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from math import floor
 from typing import Dict, Iterable, List, Mapping, Sequence, Tuple
 
 EPSILON = 1e-9
-GROUPING_DEPTH_PER_VARIANT = 2
 
 
 @dataclass(frozen=True)
@@ -34,43 +33,38 @@ def rank_stores(metrics: Iterable[StoreMetric]) -> List[str]:
 
 
 def choose_selected_stores(
-    mode: str,
     ranked_stores: Sequence[str],
     available_by_variant: Mapping[str, float],
+    minimum_per_variant: int,
 ) -> List[str]:
+    """Return the maximum number of stores supportable by every variant."""
     if not ranked_stores or not available_by_variant:
         return []
 
-    variant_units = [
-        max(0, floor(float(qty) + EPSILON))
+    minimum = max(1, int(minimum_per_variant or 1))
+    capacities = [
+        max(0, floor(float(qty) + EPSILON)) // minimum
         for qty in available_by_variant.values()
     ]
-    complete_range_capacity = min(variant_units) if variant_units else 0
-
-    if complete_range_capacity <= 0:
-        return [ranked_stores[0]]
-
-    if mode == "Grouping":
-        selected_count = max(
-            1, complete_range_capacity // GROUPING_DEPTH_PER_VARIANT
-        )
-    else:
-        selected_count = complete_range_capacity
-
-    return list(ranked_stores[: min(len(ranked_stores), selected_count)])
+    complete_store_capacity = min(capacities) if capacities else 0
+    return list(ranked_stores[: min(len(ranked_stores), complete_store_capacity)])
 
 
 def build_target_matrix(
-    mode: str,
     variants: Sequence[str],
     selected_stores: Sequence[str],
-    ranked_stores: Sequence[str],
+    all_stores: Sequence[str],
     velocity: Mapping[Tuple[str, str], float],
     coverage_days: int,
     available_by_variant: Mapping[str, float],
+    minimum_per_variant: int,
 ) -> Dict[Tuple[str, str], int]:
-    target: Dict[Tuple[str, str], int] = {
-        (store, variant): 0 for store in ranked_stores for variant in variants
+    """Allocate the minimum complete range first, then demand-based depth."""
+    minimum = max(1, int(minimum_per_variant or 1))
+    target = {
+        (store, variant): 0
+        for store in all_stores
+        for variant in variants
     }
     remaining = {
         variant: max(
@@ -82,15 +76,14 @@ def build_target_matrix(
 
     for store in selected_stores:
         for variant in variants:
-            if remaining[variant] <= 0:
-                continue
-            target[(store, variant)] += 1
-            remaining[variant] -= 1
+            qty = min(minimum, remaining[variant])
+            target[(store, variant)] = qty
+            remaining[variant] -= qty
 
     for variant in variants:
         desired = {
             store: max(
-                1,
+                minimum,
                 int(
                     round(
                         float(velocity.get((store, variant), 0.0))
@@ -133,23 +126,17 @@ def deficits_and_surpluses(
     source_current: Mapping[Tuple[str, str], float],
     target: Mapping[Tuple[str, str], int],
 ) -> Tuple[List[Tuple[str, str, int]], Dict[Tuple[str, str], int]]:
-    deficits: List[Tuple[str, str, int]] = []
-    surplus: Dict[Tuple[str, str], int] = {}
+    deficits = []
+    surplus = {}
 
     for store in stores:
         for variant in variants:
             wanted = int(target.get((store, variant), 0))
             destination_qty = int(
-                floor(
-                    float(destination_current.get((store, variant), 0.0))
-                    + EPSILON
-                )
+                floor(float(destination_current.get((store, variant), 0.0)) + EPSILON)
             )
             source_qty = int(
-                floor(
-                    float(source_current.get((store, variant), 0.0))
-                    + EPSILON
-                )
+                floor(float(source_current.get((store, variant), 0.0)) + EPSILON)
             )
 
             if wanted > destination_qty:

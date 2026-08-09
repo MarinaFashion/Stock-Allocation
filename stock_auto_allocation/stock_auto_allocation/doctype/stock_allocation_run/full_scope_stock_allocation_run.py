@@ -1,4 +1,4 @@
-"""Full spreading/grouping implementation for Stock Allocation Run."""
+"""Automatic complete-range implementation for Stock Allocation Run."""
 
 from __future__ import annotations
 
@@ -25,6 +25,12 @@ from stock_auto_allocation.stock_auto_allocation.doctype.stock_allocation_run.st
 
 
 class FullScopeStockAllocationRun(BaseStockAllocationRun):
+    def validate(self):
+        super().validate()
+        for row in self.items or []:
+            if cint(row.minimum_per_variant) < 1:
+                row.minimum_per_variant = 1
+
     @frappe.whitelist()
     def generate_proposal(self):
         if not self.items:
@@ -43,6 +49,7 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
         self.proposal_lines = []
         lookback_start = add_days(nowdate(), -cint(self.lookback_period_days))
         unfulfilled = []
+        skipped = []
 
         for row in self.items:
             if row.excluded:
@@ -57,18 +64,26 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
             if not variants:
                 continue
 
-            unfulfilled.extend(
-                self._plan_style(
-                    row.item_template,
-                    variants,
-                    stores,
-                    row.mode,
-                    lookback_start,
-                )
+            result, reason = self._plan_style(
+                row.item_template,
+                variants,
+                stores,
+                cint(row.minimum_per_variant) or 1,
+                lookback_start,
             )
+            unfulfilled.extend(result)
+            if reason:
+                skipped.append(f"{row.item_template}: {reason}")
 
         self.status = "Proposal Generated"
         self.save()
+
+        if skipped:
+            frappe.msgprint(
+                _("Styles left unchanged: {0}").format("; ".join(skipped[:20])),
+                indicator="orange",
+                alert=True,
+            )
 
         if unfulfilled:
             preview = [
@@ -84,11 +99,19 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
                 alert=True,
             )
 
-    def _plan_style(self, template, variants, stores, requested_mode, lookback_start):
+    def _plan_style(
+        self,
+        template,
+        variants,
+        stores,
+        minimum_per_variant,
+        lookback_start,
+    ):
         destination_current = {}
         source_current = {}
         velocity = {}
         metrics = []
+        store_sales = {}
 
         for store in stores:
             style_sales = 0
@@ -133,12 +156,12 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
                 velocity[(store, variant)] = sales / max(
                     1, cint(self.lookback_period_days)
                 )
-
                 style_sales += sales
                 style_stock += destination_stock
-                if destination_stock > 0:
+                if destination_stock >= minimum_per_variant:
                     complete += 1
 
+            store_sales[store] = style_sales
             metrics.append(
                 StoreMetric(
                     warehouse=store,
@@ -147,6 +170,12 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
                     complete_variants=complete,
                 )
             )
+
+        eligible_destinations = [
+            store for store in stores if flt(store_sales.get(store)) > 0
+        ]
+        if not eligible_destinations:
+            return [], _("no store has sales in the selected lookback period")
 
         dc_by_variant = {
             variant: max(
@@ -169,23 +198,30 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
             + sum(source_current[(store, variant)] for store in stores)
             for variant in variants
         }
-        total_stock = sum(available_by_variant.values())
-        mode = requested_mode or ("Grouping" if total_stock < 100 else "Spreading")
 
-        ranked = rank_stores(metrics)
+        ranked_all = rank_stores(metrics)
+        ranked_destinations = [
+            store for store in ranked_all if store in eligible_destinations
+        ]
         selected = choose_selected_stores(
-            mode,
-            ranked,
+            ranked_destinations,
             available_by_variant,
+            minimum_per_variant,
         )
+
+        if not selected:
+            return [], _(
+                "the scarcest variant cannot support the minimum of {0} piece(s)"
+            ).format(minimum_per_variant)
+
         target = build_target_matrix(
-            mode=mode,
             variants=variants,
             selected_stores=selected,
-            ranked_stores=ranked,
+            all_stores=stores,
             velocity=velocity,
             coverage_days=cint(self.coverage_days),
             available_by_variant=available_by_variant,
+            minimum_per_variant=minimum_per_variant,
         )
 
         deficits, surplus = deficits_and_surpluses(
@@ -196,8 +232,17 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
             target,
         )
 
-        rank_index = {store: index for index, store in enumerate(ranked)}
-        deficits.sort(key=lambda row: (rank_index.get(row[0], 999999), row[1]))
+        destination_rank = {
+            store: index for index, store in enumerate(ranked_destinations)
+        }
+        all_rank = {store: index for index, store in enumerate(ranked_all)}
+        deficits = [row for row in deficits if row[0] in selected]
+        deficits.sort(
+            key=lambda row: (
+                destination_rank.get(row[0], 999999),
+                row[1],
+            )
+        )
 
         unfulfilled = []
         for destination, variant, needed in deficits:
@@ -206,12 +251,8 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
             from_dc = min(remaining, dc_by_variant.get(variant, 0))
             if from_dc > 0:
                 self._append_proposal(
-                    template,
-                    variant,
-                    self.dc_warehouse,
-                    destination,
-                    from_dc,
-                    "DC",
+                    template, variant, self.dc_warehouse,
+                    destination, from_dc, "DC"
                 )
                 dc_by_variant[variant] -= from_dc
                 remaining -= from_dc
@@ -226,7 +267,7 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
                 donors.sort(
                     key=lambda source: (
                         _distance_between(source, destination),
-                        rank_index.get(source, 999999),
+                        all_rank.get(source, 999999),
                         source,
                     )
                 )
@@ -237,14 +278,9 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
                     qty = min(remaining, surplus.get((source, variant), 0))
                     if qty <= 0:
                         continue
-
                     self._append_proposal(
-                        template,
-                        variant,
-                        source,
-                        destination,
-                        qty,
-                        "Store",
+                        template, variant, source,
+                        destination, qty, "Store"
                     )
                     surplus[(source, variant)] -= qty
                     remaining -= qty
@@ -252,12 +288,11 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
             if remaining > 0:
                 unfulfilled.append((variant, destination, remaining))
 
-        return unfulfilled
+        return unfulfilled, None
 
     def _append_proposal(self, template, variant, source, destination, qty, tier):
         if qty <= 0 or source == destination:
             return
-
         self.append(
             "proposal_lines",
             {
