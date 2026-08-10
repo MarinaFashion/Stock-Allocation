@@ -13,6 +13,7 @@
   "column_break_1",
   "lookback_period_days",
   "coverage_days",
+  "source_protection_days",
   "default_minimum_per_variant",
   "allocation_scope",
   "selected_source_store",
@@ -66,7 +67,7 @@
   },
   {
    "default": "14",
-   "description": "Historical window used to measure each store's sales velocity.",
+   "description": "Historical sales window used to calculate store and variant sales velocity.",
    "fieldname": "lookback_period_days",
    "fieldtype": "Int",
    "label": "Lookback Period (days)",
@@ -74,11 +75,20 @@
    "reqd": 1
   },
   {
-   "default": "14",
-   "description": "Forward-looking number of days of stock this run aims to cover per store.",
+   "default": "7",
+   "description": "Desired forward stock cover at receiving stores. Used after restoring the minimum complete variant range.",
    "fieldname": "coverage_days",
    "fieldtype": "Int",
-   "label": "Coverage Days",
+   "label": "Target Coverage Days",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "default": "3",
+   "description": "Demand cover protected at donor stores before stock can be reallocated. The donor also keeps at least the Minimum Pieces per Variant.",
+   "fieldname": "source_protection_days",
+   "fieldtype": "Int",
+   "label": "Source Protection Days",
    "non_negative": 1,
    "reqd": 1
   },
@@ -206,7 +216,7 @@
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-08-09 00:00:00.000000",
+ "modified": "2026-08-10 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Stock Auto Allocation",
  "name": "Stock Allocation Run",

@@ -18,9 +18,13 @@
   "section_break_audit",
   "source_stock",
   "source_sales",
+  "source_protection_qty",
+  "source_days_cover",
   "column_break_audit",
   "target_stock",
   "target_sales",
+  "target_required_qty",
+  "target_days_cover",
   "section_break_2",
   "transit_warehouse",
   "material_request",
@@ -116,6 +120,23 @@
    "read_only": 1
   },
   {
+   "description": "Quantity protected at this source before it can donate, based on Source Protection Days and Minimum Pieces per Variant.",
+   "fieldname": "source_protection_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Source Protected Qty",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "description": "Source stock divided by its daily sales velocity. Blank when the variant has no sales.",
+   "fieldname": "source_days_cover",
+   "fieldtype": "Float",
+   "label": "Source Days Cover",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
    "fieldname": "column_break_audit",
    "fieldtype": "Column Break"
   },
@@ -132,6 +153,23 @@
    "fieldtype": "Float",
    "in_list_view": 1,
    "label": "Target Sales",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "description": "Target stock objective for this variant after minimum-range restoration and Target Coverage Days.",
+   "fieldname": "target_required_qty",
+   "fieldtype": "Float",
+   "in_list_view": 1,
+   "label": "Target Required Qty",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "description": "Target stock divided by its daily sales velocity. Blank when the variant has no sales.",
+   "fieldname": "target_days_cover",
+   "fieldtype": "Float",
+   "label": "Target Days Cover",
    "precision": "2",
    "read_only": 1
   },
@@ -167,7 +205,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-09 00:00:00.000000",
+ "modified": "2026-08-10 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Stock Auto Allocation",
  "name": "Stock Allocation Proposal Line",
