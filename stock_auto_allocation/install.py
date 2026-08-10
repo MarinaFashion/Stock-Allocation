@@ -55,12 +55,13 @@ CUSTOM_FIELDS = {
         {
             "fieldname": "stock_auto_allocation_run",
             "label": "Stock Allocation Run",
-            "fieldtype": "Data",
+            "fieldtype": "Link",
+            "options": "Stock Allocation Run",
             "insert_after": "material_request_type",
             "read_only": 1,
             "description": (
-                "Stock Allocation Run document name. Stored as text to preserve "
-                "traceability without creating a circular deletion dependency."
+                "Stock Allocation Run that generated this request. "
+                "Deletion cleanup removes this link before backlink validation."
             ),
         },
     ],
@@ -69,36 +70,10 @@ CUSTOM_FIELDS = {
 ROLE_NAME = "Stock Allocation Manager"
 
 
-def _ensure_custom_fields():
-    create_custom_fields(CUSTOM_FIELDS, update=True)
-
-    # Existing sites may already have this field as Link. Force the metadata
-    # to Data during migration so Frappe's link checker no longer creates the
-    # delete loop between Material Request and Stock Allocation Run.
-    field_name = "Material Request-stock_auto_allocation_run"
-    if frappe.db.exists("Custom Field", field_name):
-        frappe.db.set_value(
-            "Custom Field",
-            field_name,
-            {
-                "fieldtype": "Data",
-                "options": "",
-                "read_only": 1,
-            },
-            update_modified=False,
-        )
-        frappe.clear_cache(doctype="Material Request")
-
-
 def after_install():
-    _ensure_custom_fields()
+    create_custom_fields(CUSTOM_FIELDS, update=True)
     create_role()
     frappe.db.commit()
-
-
-def after_migrate():
-    _ensure_custom_fields()
-    create_role()
 
 
 def create_role():

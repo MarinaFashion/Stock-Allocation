@@ -226,11 +226,12 @@
   },
   {
    "fieldname": "material_request",
-   "fieldtype": "Data",
+   "fieldtype": "Link",
    "in_list_view": 1,
    "label": "Material Request",
    "read_only": 1,
-   "description": "Material Request document name. Stored as text to preserve traceability without creating a circular deletion dependency."
+   "description": "Material Request created from this proposal line. Deletion cleanup clears this reference before Frappe backlink validation.",
+   "options": "Material Request"
   },
   {
    "fieldname": "stock_entry",

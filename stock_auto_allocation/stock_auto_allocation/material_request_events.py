@@ -4,10 +4,11 @@ import frappe
 
 
 def on_trash(doc, method=None):
-    """Clear allocation proposal references when a generated MR is deleted.
+    """Clear proposal-line backlinks before Frappe validates MR links.
 
-    The reference fields are intentionally text fields, so deleting either
-    side never creates a circular Frappe Link dependency.
+    Frappe executes on_trash before backlink validation. This allows a
+    cancelled Material Request to be deleted normally while retaining Link
+    fields and normal link protection everywhere else.
     """
     rows = frappe.get_all(
         "Stock Allocation Proposal Line",
@@ -32,8 +33,6 @@ def on_trash(doc, method=None):
 
     for parent in parents:
         if frappe.db.exists("Stock Allocation Run", parent):
-            # Allow the missing request(s) to be recreated. Existing request
-            # lines remain Requested and are skipped by create_material_requests.
             frappe.db.set_value(
                 "Stock Allocation Run",
                 parent,

@@ -1057,7 +1057,12 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
             )
 
     def on_trash(self):
-        """Remove text back-references from generated MRs before deleting the run."""
+        """Clear generated-document backlinks before Frappe validates links.
+
+        Frappe calls on_trash before check_if_doc_is_linked(), so this avoids
+        the circular delete dependency without changing Link field types or
+        globally disabling link protection.
+        """
         mr_names = {
             line.material_request
             for line in self.proposal_lines
@@ -1072,6 +1077,16 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
                     "",
                     update_modified=False,
                 )
+
+        # Defensive cleanup for the future Transit -> Store leg.
+        if frappe.get_meta("Stock Entry").has_field("stock_auto_allocation_run"):
+            frappe.db.set_value(
+                "Stock Entry",
+                {"stock_auto_allocation_run": self.name},
+                "stock_auto_allocation_run",
+                "",
+                update_modified=False,
+            )
 
     @staticmethod
     def _effective_qty(item_code, warehouse, consider_transit):
