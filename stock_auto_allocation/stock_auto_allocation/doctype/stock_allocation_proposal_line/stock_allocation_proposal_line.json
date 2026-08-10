@@ -15,6 +15,11 @@
   "qty",
   "tier",
   "status",
+  "reviewed_qty",
+  "review_action",
+  "review_comment",
+  "reviewed_by",
+  "reviewed_on",
   "section_break_audit",
   "source_stock",
   "source_sales",
@@ -96,6 +101,39 @@
    "in_list_view": 1,
    "label": "Status",
    "options": "Proposed\nApproved\nRequested\nRejected",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewed_qty",
+   "fieldtype": "Float",
+   "label": "Reviewed Qty",
+   "precision": "2",
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_action",
+   "fieldtype": "Select",
+   "label": "Review Action",
+   "options": "Pending\nApprove\nAdjust\nReject",
+   "read_only": 1
+  },
+  {
+   "fieldname": "review_comment",
+   "fieldtype": "Small Text",
+   "label": "Review Comment",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewed_by",
+   "fieldtype": "Link",
+   "label": "Reviewed By",
+   "options": "User",
+   "read_only": 1
+  },
+  {
+   "fieldname": "reviewed_on",
+   "fieldtype": "Datetime",
+   "label": "Reviewed On",
    "read_only": 1
   },
   {
@@ -188,11 +226,11 @@
   },
   {
    "fieldname": "material_request",
-   "fieldtype": "Link",
+   "fieldtype": "Data",
    "in_list_view": 1,
    "label": "Material Request",
-   "options": "Material Request",
-   "read_only": 1
+   "read_only": 1,
+   "description": "Material Request document name. Stored as text to preserve traceability without creating a circular deletion dependency."
   },
   {
    "fieldname": "stock_entry",

@@ -13,7 +13,6 @@ frappe.ui.form.on("Stock Allocation Run", {
 	company(frm) {
 		frm.set_value("dc_warehouse", null);
 	},
-	// Mutual cascading: changing any one filter narrows the others.
 	season(frm) {
 		refresh_filter_options(frm);
 	},
@@ -51,9 +50,6 @@ function refresh_filter_options(frm) {
 			["season", "collection", "drop"].forEach((fieldname) => {
 				const options = [""].concat(r.message[fieldname] || []);
 				frm.set_df_property(fieldname, "options", options.join("\n"));
-				// If the currently selected value is no longer valid given
-				// the other filters, clear it rather than leaving a stale
-				// selection the dropdown can no longer show.
 				if (frm.doc[fieldname] && !options.includes(frm.doc[fieldname])) {
 					frm.set_value(fieldname, "");
 				}
@@ -63,16 +59,55 @@ function refresh_filter_options(frm) {
 	});
 }
 
-// Ensures any unsaved edits (filter changes, excluded checkboxes, Lookback
-// Period / Coverage Days) are persisted before the server-side method runs
-// -- the doctype's own methods save() at the end, so the round trip always
-// leaves the document consistent between clicks.
-function save_then_call(frm, method) {
-	const run = () => frm.call(method).then(() => frm.reload_doc());
+function save_then_call(frm, method, args = {}) {
+	const run = () => frm.call(method, args).then((r) => {
+		return frm.reload_doc().then(() => r);
+	});
 	if (frm.is_dirty()) {
 		return frm.save().then(run);
 	}
 	return run();
+}
+
+function download_review_workbook(frm) {
+	save_then_call(frm, "export_proposal_for_review").then((r) => {
+		if (!r.message || !r.message.file_url) return;
+		window.open(r.message.file_url);
+		frappe.show_alert({
+			message: __("Proposal review workbook created for Version {0}.", [r.message.proposal_version]),
+			indicator: "green",
+		});
+	});
+}
+
+function upload_review_workbook(frm) {
+	new frappe.ui.FileUploader({
+		allow_multiple: false,
+		restrictions: {
+			allowed_file_types: [".xlsx"],
+		},
+		doctype: frm.doctype,
+		docname: frm.docname,
+		on_success(file) {
+			save_then_call(frm, "import_reviewed_proposal", {
+				file_url: file.file_url,
+			}).then((r) => {
+				if (!r.message) return;
+				frappe.msgprint({
+					title: __("Proposal Review Imported"),
+					indicator: "green",
+					message: __(
+						"Approved/Adjusted: {0}<br>Adjusted: {1}<br>Rejected: {2}",
+						[
+							r.message.approved_or_adjusted_lines,
+							r.message.adjusted_lines,
+							r.message.rejected_lines,
+						]
+					),
+				});
+			});
+		},
+	});
 }
 
 function add_workflow_buttons(frm) {
@@ -87,13 +122,10 @@ function add_workflow_buttons(frm) {
 		}).addClass("btn-primary");
 	}
 
-	// Available any time there's a working list or proposal to clear, up
-	// until Material Requests actually exist (status "Requested") -- past
-	// that point the run is historical and shouldn't be reset.
 	if (frm.doc.status !== "Draft" && frm.doc.status !== "Requested") {
 		frm.add_custom_button(__("Start Over"), () => {
 			frappe.confirm(
-				__("This clears the working list and any generated proposal on this run, so filter changes take effect cleanly. It does not affect any documents already created. Continue?"),
+				__("This clears the working list and any generated proposal. Continue?"),
 				() => save_then_call(frm, "start_over")
 			);
 		});
@@ -106,9 +138,25 @@ function add_workflow_buttons(frm) {
 	}
 
 	if (frm.doc.status === "Proposal Generated") {
+		frm.add_custom_button(
+			__("Download Proposal for Review"),
+			() => download_review_workbook(frm),
+			__("Excel Review")
+		);
+
+		frm.add_custom_button(
+			__("Upload Reviewed Proposal"),
+			() => upload_review_workbook(frm),
+			__("Excel Review")
+		);
+
 		frm.add_custom_button(__("Approve"), () => {
+			const review_note =
+				frm.doc.proposal_review_status === "Reviewed"
+					? __("The reviewed quantities will be used when Material Requests are created.")
+					: __("No reviewed Excel file is currently applied; the system-proposed quantities will be used.");
 			frappe.confirm(
-				__("Approve this allocation proposal? No Material Requests will be created yet — a separate step does that."),
+				__("Approve this allocation proposal?<br><br>{0}", [review_note]),
 				() => save_then_call(frm, "approve")
 			);
 		}).addClass("btn-primary");
@@ -117,7 +165,7 @@ function add_workflow_buttons(frm) {
 	if (frm.doc.status === "Approved") {
 		frm.add_custom_button(__("Approve & Create Material Requests"), () => {
 			frappe.confirm(
-				__("This will create and submit Material Requests (Material Transfer) from the DC to each store's Transit Warehouse. Continue?"),
+				__("This creates and submits Material Requests using the final approved quantities. Continue?"),
 				() => save_then_call(frm, "create_material_requests")
 			);
 		}).addClass("btn-primary");
@@ -125,7 +173,7 @@ function add_workflow_buttons(frm) {
 
 	if (frm.doc.status === "Requested") {
 		frm.dashboard.set_headline_alert(
-			__("Material Requests have been created. Review the Proposal Lines below for links to each request."),
+			__("Material Requests have been created. Review the Proposal Lines below for request document names."),
 			"green"
 		);
 	}

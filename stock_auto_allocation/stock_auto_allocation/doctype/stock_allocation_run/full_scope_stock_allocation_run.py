@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from collections import Counter
+from io import BytesIO
 from math import floor
 
 import frappe
 from frappe import _
-from frappe.utils import add_days, cint, flt, nowdate
+from frappe.utils import add_days, cint, flt, nowdate, now_datetime
+from frappe.utils.file_manager import save_file
+
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Font, PatternFill, Protection
+from openpyxl.worksheet.datavalidation import DataValidation
 
 from stock_auto_allocation.stock_auto_allocation.sell_through_logic import (
     daily_velocity,
@@ -85,6 +91,11 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
                 frappe.throw(_("The selected target warehouse is not a store."))
 
         self.proposal_lines = []
+        self.proposal_version = cint(self.proposal_version) + 1
+        self.proposal_review_status = "Not Reviewed"
+        self.proposal_exported_on = None
+        self.proposal_reviewed_by = None
+        self.proposal_reviewed_on = None
         lookback_start = add_days(nowdate(), -cint(self.lookback_period_days))
         default_minimum = max(1, cint(self.default_minimum_per_variant))
         skipped = []
@@ -649,6 +660,418 @@ class FullScopeStockAllocationRun(BaseStockAllocationRun):
             remaining -= qty
 
         return remaining
+
+    @frappe.whitelist()
+    def export_proposal_for_review(self):
+        """Create a controlled XLSX copy of the current proposal for manager review."""
+        if self.status != "Proposal Generated":
+            frappe.throw(_("Export is available only after a proposal has been generated."))
+        if not self.proposal_lines:
+            frappe.throw(_("There are no proposal lines to export."))
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Proposal Review"
+
+        headers = [
+            "Proposal Line ID",
+            "Allocation Run",
+            "Proposal Version",
+            "Item Template",
+            "Item Variant",
+            "Source Warehouse",
+            "Target Warehouse",
+            "Proposed Qty",
+            "Reviewed Qty",
+            "Review Action",
+            "Review Comment",
+            "Tier",
+            "Source Stock",
+            "Source Sales",
+            "Source Protected Qty",
+            "Source Days Cover",
+            "Target Stock",
+            "Target Sales",
+            "Target Required Qty",
+            "Target Days Cover",
+        ]
+        ws.append(headers)
+
+        locked_fill = PatternFill("solid", fgColor="E7E6E6")
+        editable_fill = PatternFill("solid", fgColor="FFF2CC")
+        header_fill = PatternFill("solid", fgColor="551C25")
+        header_font = Font(color="FFFFFF", bold=True)
+
+        for cell in ws[1]:
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+            cell.protection = Protection(locked=True)
+
+        for line in self.proposal_lines:
+            ws.append(
+                [
+                    line.name,
+                    self.name,
+                    cint(self.proposal_version),
+                    line.item_template,
+                    line.item_code,
+                    line.source_warehouse,
+                    line.target_warehouse,
+                    flt(line.qty),
+                    flt(line.qty),
+                    "Approve",
+                    "",
+                    line.tier,
+                    flt(line.source_stock),
+                    flt(line.source_sales),
+                    flt(line.source_protection_qty),
+                    line.source_days_cover,
+                    flt(line.target_stock),
+                    flt(line.target_sales),
+                    flt(line.target_required_qty),
+                    line.target_days_cover,
+                ]
+            )
+
+        editable_columns = {9, 10, 11}  # Reviewed Qty, Action, Comment
+        for row in ws.iter_rows(min_row=2):
+            for idx, cell in enumerate(row, start=1):
+                if idx in editable_columns:
+                    cell.fill = editable_fill
+                    cell.protection = Protection(locked=False)
+                else:
+                    cell.fill = locked_fill
+                    cell.protection = Protection(locked=True)
+
+        action_validation = DataValidation(
+            type="list",
+            formula1='"Approve,Adjust,Reject"',
+            allow_blank=False,
+        )
+        ws.add_data_validation(action_validation)
+        action_validation.add(f"J2:J{ws.max_row}")
+
+        widths = {
+            "A": 20, "B": 18, "C": 16, "D": 18, "E": 20, "F": 28, "G": 28,
+            "H": 14, "I": 14, "J": 16, "K": 38, "L": 10, "M": 14, "N": 14,
+            "O": 20, "P": 18, "Q": 14, "R": 14, "S": 20, "T": 18,
+        }
+        for col, width in widths.items():
+            ws.column_dimensions[col].width = width
+
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+        ws.protection.sheet = True
+        ws.protection.enable()
+
+        instructions = wb.create_sheet("Instructions")
+        instructions["A1"] = "Stock Allocation Proposal Review"
+        instructions["A1"].font = Font(bold=True, size=14, color="551C25")
+        instructions["A3"] = "Editable columns"
+        instructions["A4"] = "Reviewed Qty"
+        instructions["B4"] = "Final quantity requested by the Inventory Manager."
+        instructions["A5"] = "Review Action"
+        instructions["B5"] = "Approve, Adjust, or Reject."
+        instructions["A6"] = "Review Comment"
+        instructions["B6"] = "Required for Adjust and Reject."
+        instructions["A8"] = "Rules"
+        rules = [
+            "Approve: Reviewed Qty must equal Proposed Qty.",
+            "Adjust: Reviewed Qty must be between 0 and Proposed Qty and a comment is required.",
+            "Reject: Reviewed Qty must be 0 and a comment is required.",
+            "Do not add, remove, reorder identifiers, or change system-calculated columns.",
+            "The file can be uploaded only to the same Allocation Run and Proposal Version.",
+            "If the proposal is regenerated after export, the old Excel file becomes invalid.",
+        ]
+        for i, rule in enumerate(rules, start=9):
+            instructions[f"A{i}"] = f"• {rule}"
+        instructions.column_dimensions["A"].width = 90
+        instructions.column_dimensions["B"].width = 70
+
+        output = BytesIO()
+        wb.save(output)
+        output.seek(0)
+
+        filename = f"{self.name}-proposal-v{cint(self.proposal_version)}-review.xlsx"
+        file_doc = save_file(
+            filename,
+            output.getvalue(),
+            self.doctype,
+            self.name,
+            is_private=1,
+        )
+
+        self.proposal_review_status = "Exported"
+        self.proposal_exported_on = now_datetime()
+        self.save()
+
+        return {
+            "file_url": file_doc.file_url,
+            "file_name": filename,
+            "proposal_version": cint(self.proposal_version),
+        }
+
+    @frappe.whitelist()
+    def import_reviewed_proposal(self, file_url):
+        """Validate and import manager decisions from a reviewed proposal XLSX."""
+        if self.status != "Proposal Generated":
+            frappe.throw(_("Reviewed proposals can be uploaded only while the run is in Proposal Generated status."))
+        if not file_url:
+            frappe.throw(_("Upload an XLSX file first."))
+
+        files = frappe.get_all(
+            "File",
+            filters={
+                "file_url": file_url,
+                "attached_to_doctype": self.doctype,
+                "attached_to_name": self.name,
+            },
+            pluck="name",
+            limit=1,
+        )
+        if not files:
+            frappe.throw(_("The uploaded file must be attached to this Stock Allocation Run."))
+
+        content = frappe.get_doc("File", files[0]).get_content()
+        try:
+            wb = load_workbook(BytesIO(content), data_only=True)
+        except Exception:
+            frappe.throw(_("The uploaded file is not a valid XLSX workbook."))
+
+        if "Proposal Review" not in wb.sheetnames:
+            frappe.throw(_('The workbook must contain a sheet named "Proposal Review".'))
+
+        ws = wb["Proposal Review"]
+        header_map = {
+            str(cell.value).strip(): idx
+            for idx, cell in enumerate(ws[1], start=1)
+            if cell.value is not None
+        }
+        required_headers = {
+            "Proposal Line ID",
+            "Allocation Run",
+            "Proposal Version",
+            "Proposed Qty",
+            "Reviewed Qty",
+            "Review Action",
+            "Review Comment",
+        }
+        missing_headers = sorted(required_headers - set(header_map))
+        if missing_headers:
+            frappe.throw(_("Missing required review columns: {0}").format(", ".join(missing_headers)))
+
+        current_lines = {line.name: line for line in self.proposal_lines}
+        imported = {}
+        errors = []
+
+        for row_no in range(2, ws.max_row + 1):
+            line_id = ws.cell(row_no, header_map["Proposal Line ID"]).value
+            if not line_id:
+                continue
+            line_id = str(line_id).strip()
+
+            if line_id in imported:
+                errors.append(f"Row {row_no}: duplicate Proposal Line ID {line_id}.")
+                continue
+            if line_id not in current_lines:
+                errors.append(f"Row {row_no}: Proposal Line ID {line_id} does not belong to the current proposal.")
+                continue
+
+            run_name = str(ws.cell(row_no, header_map["Allocation Run"]).value or "").strip()
+            version = cint(ws.cell(row_no, header_map["Proposal Version"]).value)
+            proposed_in_file = flt(ws.cell(row_no, header_map["Proposed Qty"]).value)
+            reviewed_qty = flt(ws.cell(row_no, header_map["Reviewed Qty"]).value)
+            action = str(ws.cell(row_no, header_map["Review Action"]).value or "").strip().title()
+            comment = str(ws.cell(row_no, header_map["Review Comment"]).value or "").strip()
+            line = current_lines[line_id]
+
+            if run_name != self.name:
+                errors.append(f"Row {row_no}: Allocation Run does not match {self.name}.")
+            if version != cint(self.proposal_version):
+                errors.append(
+                    f"Row {row_no}: Proposal Version {version} is obsolete; current version is {cint(self.proposal_version)}."
+                )
+            if abs(proposed_in_file - flt(line.qty)) > 0.0001:
+                errors.append(f"Row {row_no}: Proposed Qty was changed in Excel.")
+            if reviewed_qty < 0 or reviewed_qty - flt(line.qty) > 0.0001:
+                errors.append(
+                    f"Row {row_no}: Reviewed Qty must be between 0 and Proposed Qty ({flt(line.qty)})."
+                )
+            if action not in {"Approve", "Adjust", "Reject"}:
+                errors.append(f"Row {row_no}: Review Action must be Approve, Adjust, or Reject.")
+            elif action == "Approve" and abs(reviewed_qty - flt(line.qty)) > 0.0001:
+                errors.append(f"Row {row_no}: Approve requires Reviewed Qty to equal Proposed Qty.")
+            elif action == "Reject" and reviewed_qty != 0:
+                errors.append(f"Row {row_no}: Reject requires Reviewed Qty = 0.")
+            if action in {"Adjust", "Reject"} and not comment:
+                errors.append(f"Row {row_no}: Review Comment is required for {action}.")
+
+            imported[line_id] = {
+                "reviewed_qty": reviewed_qty,
+                "action": action,
+                "comment": comment,
+            }
+
+        missing_lines = sorted(set(current_lines) - set(imported))
+        if missing_lines:
+            errors.append(
+                "The workbook is missing {0} proposal line(s). Do not delete proposal rows from the review file.".format(
+                    len(missing_lines)
+                )
+            )
+
+        if errors:
+            preview = "<br>".join(f"• {frappe.utils.escape_html(error)}" for error in errors[:25])
+            more = (
+                f"<br>• ... and {len(errors) - 25} more error(s)."
+                if len(errors) > 25
+                else ""
+            )
+            frappe.throw(_("The reviewed proposal could not be imported:<br>{0}{1}").format(preview, more))
+
+        reviewed_on = now_datetime()
+        for line_id, values in imported.items():
+            line = current_lines[line_id]
+            line.reviewed_qty = values["reviewed_qty"]
+            line.review_action = values["action"]
+            line.review_comment = values["comment"]
+            line.reviewed_by = frappe.session.user
+            line.reviewed_on = reviewed_on
+
+        self.proposal_review_status = "Reviewed"
+        self.proposal_reviewed_by = frappe.session.user
+        self.proposal_reviewed_on = reviewed_on
+        self.save()
+
+        approved = sum(1 for values in imported.values() if values["reviewed_qty"] > 0)
+        rejected = len(imported) - approved
+        adjusted = sum(1 for values in imported.values() if values["action"] == "Adjust")
+        return {
+            "approved_or_adjusted_lines": approved,
+            "adjusted_lines": adjusted,
+            "rejected_lines": rejected,
+        }
+
+    @frappe.whitelist()
+    def approve(self):
+        if self.status != "Proposal Generated":
+            frappe.throw(_('Only a run with status "Proposal Generated" can be approved.'))
+        if not self.proposal_lines:
+            frappe.throw(_("There are no proposal lines to approve."))
+
+        reviewed = self.proposal_review_status == "Reviewed"
+        approved_count = 0
+
+        for line in self.proposal_lines:
+            if not line.transit_warehouse:
+                frappe.throw(
+                    _("Line for {0} -> {1} has no Transit Warehouse resolved.").format(
+                        line.item_code,
+                        line.target_warehouse,
+                    )
+                )
+
+            if reviewed:
+                final_qty = flt(line.reviewed_qty)
+                if line.review_action == "Reject" or final_qty <= 0:
+                    line.status = "Rejected"
+                    continue
+            line.status = "Approved"
+            approved_count += 1
+
+        if not approved_count:
+            frappe.throw(_("The proposal contains no quantity approved for transfer."))
+
+        self.status = "Approved"
+        self.save()
+
+    @frappe.whitelist()
+    def create_material_requests(self):
+        if self.status != "Approved":
+            frappe.throw(_("Only an approved run can have Material Requests created."))
+
+        reviewed = self.proposal_review_status == "Reviewed"
+        groups = {}
+        for line in self.proposal_lines:
+            if line.status != "Approved":
+                continue
+
+            final_qty = flt(line.reviewed_qty) if reviewed else flt(line.qty)
+            if final_qty <= 0:
+                continue
+
+            key = (line.source_warehouse, line.transit_warehouse)
+            groups.setdefault(key, []).append((line, final_qty))
+
+        if not groups:
+            frappe.throw(_("There are no approved quantities to create Material Requests for."))
+
+        errors = []
+        created = 0
+        for (source, transit), rows in groups.items():
+            try:
+                mr = frappe.new_doc("Material Request")
+                mr.material_request_type = "Material Transfer"
+                mr.company = self.company
+                mr.schedule_date = nowdate()
+                mr.stock_auto_allocation_run = self.name
+
+                for line, final_qty in rows:
+                    mr.append(
+                        "items",
+                        {
+                            "item_code": line.item_code,
+                            "qty": final_qty,
+                            "warehouse": transit,
+                            "from_warehouse": source,
+                            "schedule_date": nowdate(),
+                        },
+                    )
+
+                mr.insert(ignore_permissions=True)
+                mr.submit()
+                created += 1
+
+                for line, _ in rows:
+                    line.status = "Requested"
+                    line.material_request = mr.name
+            except Exception:
+                frappe.log_error(
+                    frappe.get_traceback(),
+                    f"Stock Allocation Run {self.name}: MR creation failed",
+                )
+                errors.append(f"{source} -> {transit}")
+
+        if created:
+            self.status = "Requested"
+        self.save()
+
+        if errors:
+            frappe.msgprint(
+                _("Some Material Requests could not be created and were skipped: {0}. Check the Error Log.").format(
+                    ", ".join(errors)
+                ),
+                indicator="orange",
+                alert=True,
+            )
+
+    def on_trash(self):
+        """Remove text back-references from generated MRs before deleting the run."""
+        mr_names = {
+            line.material_request
+            for line in self.proposal_lines
+            if line.material_request
+        }
+        for mr_name in mr_names:
+            if frappe.db.exists("Material Request", mr_name):
+                frappe.db.set_value(
+                    "Material Request",
+                    mr_name,
+                    "stock_auto_allocation_run",
+                    "",
+                    update_modified=False,
+                )
 
     @staticmethod
     def _effective_qty(item_code, warehouse, consider_transit):
