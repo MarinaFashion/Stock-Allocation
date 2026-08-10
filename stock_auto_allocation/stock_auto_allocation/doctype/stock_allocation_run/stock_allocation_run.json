@@ -15,6 +15,8 @@
   "coverage_days",
   "source_protection_days",
   "default_minimum_per_variant",
+  "minimum_store_transfer_qty",
+  "apply_minimum_to_dc_transfers",
   "allocation_scope",
   "selected_source_store",
   "selected_target_store",
@@ -105,6 +107,21 @@
    "label": "Default Minimum Pieces per Variant",
    "non_negative": 1,
    "reqd": 1
+  },
+  {
+   "default": "0",
+   "description": "Minimum total approved quantity required for one Store-to-Store Source → Target route before a Material Request is created. The quantity is summed across all items/variants on that route. 0 disables this control.",
+   "fieldname": "minimum_store_transfer_qty",
+   "fieldtype": "Int",
+   "label": "Minimum Store-to-Store Transfer Qty",
+   "non_negative": 1
+  },
+  {
+   "default": "0",
+   "description": "If checked, the same minimum route quantity is also applied to Distribution Center → Store Material Requests.",
+   "fieldname": "apply_minimum_to_dc_transfers",
+   "fieldtype": "Check",
+   "label": "Apply Minimum Qty to DC Transfers"
   },
   {
    "default": "Many-to-Many",
