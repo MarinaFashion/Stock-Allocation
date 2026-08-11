@@ -1,8 +1,4 @@
-"""Material Request routing and economic transfer controls.
-
-This layer preserves the existing sell-through and proposal-consolidation logic.
-It only changes how approved proposal lines are converted into Material Requests.
-"""
+"""Material Request routing and economic transfer controls."""
 
 import frappe
 from frappe import _
@@ -14,8 +10,6 @@ from stock_auto_allocation.stock_auto_allocation.consolidated_stock_allocation_r
 
 
 class EconomicRoutingStockAllocationRun(ConsolidatedStockAllocationRun):
-    """Create economically meaningful Material Requests per physical route."""
-
     def validate(self):
         super().validate()
         if cint(self.minimum_store_transfer_qty) < 0:
@@ -30,12 +24,6 @@ class EconomicRoutingStockAllocationRun(ConsolidatedStockAllocationRun):
         minimum_qty = max(0, cint(self.minimum_store_transfer_qty))
         apply_minimum_to_dc = bool(cint(self.apply_minimum_to_dc_transfers))
 
-        # One operational Material Request per:
-        # Source Warehouse -> Final Target Store -> Target Transit Warehouse.
-        #
-        # `target_warehouse` is included explicitly even though transit warehouses
-        # are normally unique per store. This makes the grouping business-safe
-        # even if warehouse configuration changes later.
         groups = {}
         for line in self.proposal_lines:
             if line.status != "Approved":
@@ -53,13 +41,15 @@ class EconomicRoutingStockAllocationRun(ConsolidatedStockAllocationRun):
             groups.setdefault(key, []).append((line, final_qty))
 
         if not groups:
-            frappe.throw(_("There are no approved quantities to create Material Requests for."))
+            frappe.throw(
+                _("There are no approved quantities to create Material Requests for.")
+            )
 
         eligible_groups = []
         skipped_groups = []
 
         for (source, target, transit), rows in groups.items():
-            route_qty = sum(flt(qty) for _, qty in rows)
+            route_qty = sum(flt(route_line_qty) for line_obj, route_line_qty in rows)
             source_is_dc = source == self.dc_warehouse
 
             threshold_applies = (
@@ -105,10 +95,6 @@ class EconomicRoutingStockAllocationRun(ConsolidatedStockAllocationRun):
                 mr.company = self.company
                 mr.schedule_date = nowdate()
                 mr.stock_auto_allocation_run = self.name
-
-                # Populate the parent defaults as well as child rows.
-                # ERPNext uses these parent fields as "Set Source Warehouse"
-                # and "Set Target Warehouse" on the Material Request form.
                 mr.set_from_warehouse = source
                 mr.set_warehouse = transit
 
@@ -128,7 +114,7 @@ class EconomicRoutingStockAllocationRun(ConsolidatedStockAllocationRun):
                 mr.submit()
                 created += 1
 
-                for line, _ in rows:
+                for line, final_qty in rows:
                     line.status = "Requested"
                     line.material_request = mr.name
 
@@ -142,9 +128,6 @@ class EconomicRoutingStockAllocationRun(ConsolidatedStockAllocationRun):
                 )
                 errors.append(f"{source} → {target}")
 
-        # If at least one MR was created, this run has progressed to Requested.
-        # Routes below the economic minimum deliberately remain Approved with
-        # no Material Request, making them easy to identify in Proposal Lines.
         if created:
             self.status = "Requested"
 

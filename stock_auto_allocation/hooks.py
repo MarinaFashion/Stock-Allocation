@@ -4,7 +4,7 @@ app_publisher = "Your Company"
 app_description = "Stock Auto-Allocation Module: sell-through focused DC/store reallocation."
 app_email = "dev@yourcompany.com"
 app_license = "mit"
-app_version = "1.4.0"
+app_version = "1.4.1"
 
 required_apps = ["erpnext"]
 
