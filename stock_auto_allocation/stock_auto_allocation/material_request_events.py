@@ -1,15 +1,10 @@
-"""Material Request lifecycle cleanup for Stock Allocation Run links."""
+"""Material Request lifecycle synchronization for Stock Allocation Runs."""
 
 import frappe
 
 
 def on_trash(doc, method=None):
-    """Clear proposal-line backlinks before Frappe validates MR links.
-
-    Frappe executes on_trash before backlink validation. This allows a
-    cancelled Material Request to be deleted normally while retaining Link
-    fields and normal link protection everywhere else.
-    """
+    """Clear proposal-line MR references without weakening run deletion rules."""
     rows = frappe.get_all(
         "Stock Allocation Proposal Line",
         filters={"material_request": doc.name},
@@ -18,9 +13,9 @@ def on_trash(doc, method=None):
     if not rows:
         return
 
-    parents = set()
+    parents = {row.parent for row in rows}
+
     for row in rows:
-        parents.add(row.parent)
         frappe.db.set_value(
             "Stock Allocation Proposal Line",
             row.name,
@@ -32,11 +27,24 @@ def on_trash(doc, method=None):
         )
 
     for parent in parents:
-        if frappe.db.exists("Stock Allocation Run", parent):
-            frappe.db.set_value(
-                "Stock Allocation Run",
-                parent,
-                "status",
-                "Approved",
-                update_modified=False,
-            )
+        if not frappe.db.exists("Stock Allocation Run", parent):
+            continue
+
+        run_status = frappe.db.get_value("Stock Allocation Run", parent, "status")
+        if run_status == "Cancelled":
+            continue
+
+        remaining = frappe.db.count(
+            "Material Request",
+            filters={
+                "stock_auto_allocation_run": parent,
+                "name": ["!=", doc.name],
+            },
+        )
+        frappe.db.set_value(
+            "Stock Allocation Run",
+            parent,
+            "status",
+            "Requested" if remaining else "Approved",
+            update_modified=False,
+        )

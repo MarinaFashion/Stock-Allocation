@@ -4,7 +4,7 @@ app_publisher = "Your Company"
 app_description = "Stock Auto-Allocation Module: sell-through focused DC/store reallocation."
 app_email = "dev@yourcompany.com"
 app_license = "mit"
-app_version = "1.4.2"
+app_version = "1.5.0"
 
 required_apps = ["erpnext"]
 after_install = "stock_auto_allocation.install.after_install"
@@ -12,8 +12,8 @@ after_install = "stock_auto_allocation.install.after_install"
 override_doctype_class = {
     "Stock Allocation Run": (
         "stock_auto_allocation.stock_auto_allocation."
-        "economic_routing_stock_allocation_run."
-        "EconomicRoutingStockAllocationRun"
+        "commercial_stock_allocation_run."
+        "CommercialStockAllocationRun"
     )
 }
 

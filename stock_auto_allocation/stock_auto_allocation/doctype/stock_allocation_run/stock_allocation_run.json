@@ -14,6 +14,7 @@
   "lookback_period_days",
   "coverage_days",
   "source_protection_days",
+  "new_release_grace_period_days",
   "default_minimum_per_variant",
   "minimum_store_transfer_qty",
   "apply_minimum_to_dc_transfers",
@@ -96,6 +97,15 @@
    "fieldname": "source_protection_days",
    "fieldtype": "Int",
    "label": "Source Protection Days",
+   "non_negative": 1,
+   "reqd": 1
+  },
+  {
+   "default": "14",
+   "description": "Protect newly displayed styles from premature reallocation. During this period the donor keeps at least its normal protection and enough stock for the Target Coverage Days. Variant Display Date is used first; if blank, the template Display Date is used.",
+   "fieldname": "new_release_grace_period_days",
+   "fieldtype": "Int",
+   "label": "New Release Grace Period (Days)",
    "non_negative": 1,
    "reqd": 1
   },
@@ -271,8 +281,14 @@
   }
  ],
  "index_web_pages_for_search": 1,
- "links": [],
- "modified": "2026-08-10 00:00:00.000000",
+ "links": [
+  {
+   "group": "Generated Documents",
+   "link_doctype": "Material Request",
+   "link_fieldname": "stock_auto_allocation_run"
+  }
+ ],
+ "modified": "2026-08-12 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Stock Auto Allocation",
  "name": "Stock Allocation Run",

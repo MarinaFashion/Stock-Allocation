@@ -173,8 +173,17 @@ function add_workflow_buttons(frm) {
 
 	if (frm.doc.status === "Requested") {
 		frm.dashboard.set_headline_alert(
-			__("Material Requests have been created. Review the Proposal Lines below for request document names."),
+			__("Material Requests have been created. Use the Generated Documents connection to open them."),
 			"green"
 		);
+	}
+
+	if (["Items Pulled", "Proposal Generated", "Approved", "Requested"].includes(frm.doc.status)) {
+		frm.add_custom_button(__("Cancel Allocation Run"), () => {
+			frappe.confirm(
+				__("The run can be cancelled only after all generated Material Requests are cancelled or deleted. Continue?"),
+				() => save_then_call(frm, "cancel_allocation_run")
+			);
+		}, __("Actions"));
 	}
 }
