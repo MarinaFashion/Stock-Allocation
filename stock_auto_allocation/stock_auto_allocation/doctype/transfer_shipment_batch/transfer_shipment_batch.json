@@ -1,0 +1,151 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "TSB-.YYYY.-.#####",
+ "creation": "2026-08-13 12:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "stock_allocation_run",
+  "status",
+  "section_break_route",
+  "source_city",
+  "destination_city",
+  "column_break_route",
+  "origin_hub",
+  "destination_hub",
+  "section_break_totals",
+  "total_qty",
+  "transfer_count",
+  "section_break_items",
+  "items"
+ ],
+ "fields": [
+  {
+   "fieldname": "stock_allocation_run",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "Stock Allocation Run",
+   "options": "Stock Allocation Run",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "default": "Planned",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Status",
+   "options": "Planned\nReady\nPartially Created\nDispatched\nArrived\nCompleted\nCancelled",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_route",
+   "fieldtype": "Section Break",
+   "label": "City Route"
+  },
+  {
+   "fieldname": "source_city",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Source City",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "destination_city",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Destination City",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "column_break_route",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "origin_hub",
+   "fieldtype": "Link",
+   "label": "Origin Hub",
+   "options": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "destination_hub",
+   "fieldtype": "Link",
+   "label": "Destination Hub",
+   "options": "Warehouse",
+   "read_only": 1,
+   "reqd": 1
+  },
+  {
+   "fieldname": "section_break_totals",
+   "fieldtype": "Section Break",
+   "label": "Batch Totals"
+  },
+  {
+   "fieldname": "total_qty",
+   "fieldtype": "Float",
+   "label": "Total Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "transfer_count",
+   "fieldtype": "Int",
+   "label": "Transfer Count",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_break_items",
+   "fieldtype": "Section Break",
+   "label": "Transfers"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "label": "Transfers",
+   "options": "Transfer Shipment Batch Item"
+  }
+ ],
+ "index_web_pages_for_search": 1,
+ "is_submittable": 0,
+ "links": [],
+ "modified": "2026-08-13 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Stock Auto Allocation",
+ "name": "Transfer Shipment Batch",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Stock Allocation Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

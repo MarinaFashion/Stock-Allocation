@@ -18,6 +18,7 @@
   "new_release_grace_period_days",
   "default_minimum_per_variant",
   "minimum_store_transfer_qty",
+  "minimum_consolidated_city_transfer_qty",
   "apply_minimum_to_dc_transfers",
   "allocation_scope",
   "selected_source_store",
@@ -132,6 +133,14 @@
    "fieldname": "minimum_store_transfer_qty",
    "fieldtype": "Int",
    "label": "Minimum Store-to-Store Transfer Qty",
+   "non_negative": 1
+  },
+  {
+   "default": "0",
+   "description": "Minimum total approved quantity for all Store-to-Store transfers in the same Source City → Destination City pair. When reached, ALL eligible routes in that city pair are created and marked as one consolidated physical shipment, even when an individual route already exceeds the direct-transfer minimum. 0 disables city consolidation.",
+   "fieldname": "minimum_consolidated_city_transfer_qty",
+   "fieldtype": "Int",
+   "label": "Minimum Consolidated City Transfer Qty",
    "non_negative": 1
   },
   {
@@ -296,7 +305,7 @@
    "link_fieldname": "stock_auto_allocation_run"
   }
  ],
- "modified": "2026-08-13 00:00:00.000000",
+ "modified": "2026-08-13 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Stock Auto Allocation",
  "name": "Stock Allocation Run",
