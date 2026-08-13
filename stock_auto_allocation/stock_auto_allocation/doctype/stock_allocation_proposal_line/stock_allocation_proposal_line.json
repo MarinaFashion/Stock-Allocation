@@ -21,6 +21,9 @@
   "reviewed_by",
   "reviewed_on",
   "section_break_audit",
+  "display_date",
+  "grace_period_till_date",
+  "target_historical_sales_used",
   "source_stock",
   "source_sales",
   "source_protection_qty",
@@ -142,6 +145,30 @@
    "label": "Stock and Sales at Proposal Time"
   },
   {
+   "description": "Effective display date used by the engine. Variant date is preferred; template date is used when the variant date is blank.",
+   "fieldname": "display_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Display Date",
+   "read_only": 1
+  },
+  {
+   "description": "Inclusive final date of the New Release Grace Period calculated from the effective Display Date.",
+   "fieldname": "grace_period_till_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Grace Period Till Date",
+   "read_only": 1
+  },
+  {
+   "default": "1",
+   "description": "Shows whether target historical sales were used to calculate this proposal line's target requirement.",
+   "fieldname": "target_historical_sales_used",
+   "fieldtype": "Check",
+   "label": "Target Historical Sales Used",
+   "read_only": 1
+  },
+  {
    "fieldname": "source_stock",
    "fieldtype": "Float",
    "in_list_view": 1,
@@ -244,7 +271,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-08-10 00:00:00.000000",
+ "modified": "2026-08-13 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Stock Auto Allocation",
  "name": "Stock Allocation Proposal Line",

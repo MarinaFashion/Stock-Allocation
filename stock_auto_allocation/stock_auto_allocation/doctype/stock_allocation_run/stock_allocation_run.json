@@ -13,6 +13,7 @@
   "column_break_1",
   "lookback_period_days",
   "coverage_days",
+  "use_target_historical_sales",
   "source_protection_days",
   "new_release_grace_period_days",
   "default_minimum_per_variant",
@@ -90,6 +91,13 @@
    "label": "Target Coverage Days",
    "non_negative": 1,
    "reqd": 1
+  },
+  {
+   "default": "1",
+   "description": "When checked, target demand uses historical sales velocity and Target Coverage Days. Uncheck for a reopened/newly reset target store whose recent sales history is not mature; the target will then receive only the Minimum Pieces per Variant. Source-store sales performance and source protection remain fully active.",
+   "fieldname": "use_target_historical_sales",
+   "fieldtype": "Check",
+   "label": "Use Target Historical Sales"
   },
   {
    "default": "3",
@@ -288,7 +296,7 @@
    "link_fieldname": "stock_auto_allocation_run"
   }
  ],
- "modified": "2026-08-12 00:00:00.000000",
+ "modified": "2026-08-13 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Stock Auto Allocation",
  "name": "Stock Allocation Run",
